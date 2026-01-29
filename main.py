@@ -8,7 +8,7 @@ warnings.filterwarnings("ignore")
 from config.settings import INITIAL_CAPITAL, DATA_FILE, STRATEGY_WEIGHTS
 from data.fetcher import load_data
 from data.features import compute_indicators
-from strategies import BreakoutStrategy, MeanReversionStrategy
+from strategies import BreakoutStrategy, MeanReversionStrategy, MomentumStrategy
 from engine import PortfolioManager
 from analysis import calculate_stats, ResultVisualizer
 from analysis.stats import print_stats
@@ -35,8 +35,12 @@ def main():
         weight=STRATEGY_WEIGHTS['BREAKOUT']
     )
     manager.add_strategy(
-        MeanReversionStrategy("MEAN_REV"), 
+        MeanReversionStrategy("MEAN_REV"),
         weight=STRATEGY_WEIGHTS['MEAN_REV']
+    )
+    manager.add_strategy(
+        MomentumStrategy("MOMENTUM"),
+        weight=STRATEGY_WEIGHTS['MOMENTUM']
     )
     
     # 5. 백테스팅 실행

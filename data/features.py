@@ -12,7 +12,9 @@ from config.settings import (
     ATR_PERIOD,
     RSI_PERIOD,
     BB_PERIOD,
-    BB_STD
+    BB_STD,
+    REGIME_ADX_TREND,
+    REGIME_ADX_RANGE
 )
 
 
@@ -81,6 +83,24 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df['upperBB'] = df['maBB'] + (df['stdBB'] * BB_STD)
     df['lowerBB'] = df['maBB'] - (df['stdBB'] * BB_STD)
     df['bb_width'] = (df['upperBB'] - df['lowerBB']) / df['maBB']
+
+    # 시장 레짐 분류
+    ema21 = df['ema21']
+    ema50 = df['ema50']
+    ema200 = df['ema200']
+    adx = df['adx']
+    price = df['close']
+
+    trend_up = (ema21 > ema50) & (ema50 > ema200) & (adx > REGIME_ADX_TREND) & (price > ema50)
+    trend_down = (ema21 < ema50) & (ema50 < ema200) & (adx > REGIME_ADX_TREND) & (price < ema50)
+    ranging = adx < REGIME_ADX_RANGE
+    # WEAK_TREND: ADX between RANGE and TREND thresholds
+
+    df['regime'] = 'WEAK_TREND'
+    df.loc[trend_up, 'regime'] = 'TREND_UP'
+    df.loc[trend_down, 'regime'] = 'TREND_DOWN'
+    df.loc[ranging, 'regime'] = 'RANGING'
+    df['regime_strength'] = adx.clip(0, 100)
 
     return df
 

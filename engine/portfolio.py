@@ -6,7 +6,7 @@ import pandas as pd
 from datetime import datetime
 
 from config.settings import (
-    FEE_RATE, RISK_PER_TRADE, MAX_HOLD_CANDLES,
+    FEE_RATE, RISK_PER_TRADE,
     SLIPPAGE_ATR_MULT, SLIPPAGE_MIN_PCT, SLIPPAGE_MAX_PCT,
     VOLATILITY_RISK_TIERS, DRAWDOWN_RISK_TIERS,
     MAX_SAME_DIRECTION_POSITIONS, CONCURRENT_POSITION_RISK_MULT
@@ -265,11 +265,6 @@ class PortfolioManager:
             elif force_exit_reason and partial_close is None:
                 exit_price = row['close']
 
-            # 시간 청산
-            elif candles_held > MAX_HOLD_CANDLES:
-                exit_price = row['close']
-                exit_reason = "TIME"
-
             # 포지션 종료 실행
             if exit_reason and exit_price is not None:
                 self._handle_exit(strat_name, trade, row, timestamp, exit_price, exit_reason)
@@ -279,6 +274,13 @@ class PortfolioManager:
         # 당일 거래 중단 상태면 진입 불가
         if self.daily_dd_halt:
             return
+
+        # Portfolio-level regime gate: limit positions during TREND_DOWN
+        current_regime = row.get('regime', 'UNKNOWN')
+        if current_regime == 'TREND_DOWN':
+            active_count = self._get_concurrent_position_count()
+            if active_count >= 1:
+                return  # No new entries during downtrend if already have a position
 
         for item in self.strategies:
             algo = item['algo']
@@ -339,8 +341,12 @@ class PortfolioManager:
             # 일별 추적 업데이트
             self._update_daily_tracking(timestamp)
 
-            # 자산 기록
-            self.equity_curve.append({'timestamp': timestamp, 'equity': self.current_capital})
+            # 자산 기록 (현금 + 미실현 손익)
+            unrealized = 0.0
+            for trade in self.active_trades.values():
+                if trade is not None:
+                    unrealized += (row['close'] - trade['entry_price']) * trade.get('remaining_size', trade.get('size', 0))
+            self.equity_curve.append({'timestamp': timestamp, 'equity': self.current_capital + unrealized})
 
             atr = row.get('atr', 0)
             if pd.isna(atr) or atr == 0:

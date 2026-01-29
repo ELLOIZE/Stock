@@ -69,7 +69,6 @@ Extend `Strategy` base class and implement three methods:
 
 - `INITIAL_CAPITAL`: 10000.0
 - `RISK_PER_TRADE`: 0.01 (1% per trade)
-- `MAX_HOLD_CANDLES`: 288 (24h in 5m candles, time-based forced exit)
 - `STRATEGY_WEIGHTS`: {'BREAKOUT': 0.6, 'MEAN_REV': 0.4}
 - `BACKTEST_WINDOW_SIZE`: 5000 candles per period (~17 days)
 - `NUM_PERIODS`: 100 random periods for multi-period testing

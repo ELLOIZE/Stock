@@ -47,36 +47,41 @@ BB_STD = 2
 
 # 전략별 가중치
 STRATEGY_WEIGHTS = {
-    'BREAKOUT': 0.6,
-    'MEAN_REV': 0.4
+    'BREAKOUT': 0.4,
+    'MEAN_REV': 0.3,
+    'MOMENTUM': 0.3
 }
-
-# 시간 청산 (캔들 개수, 5분봉 기준 288 = 24시간)
-MAX_HOLD_CANDLES = 288
 
 # =========================================================
 # Breakout Strategy 개선 파라미터
 # =========================================================
 
-# 4단계 트레일링 스탑 설정 (v2.1 - 더 넓은 간격)
+# 4단계 트레일링 스탑 설정 (v4 - 빠른 보호)
 TRAILING_STOP_LEVELS = {
-    'breakeven': {'profit_atr': 2.0, 'trail_atr': 0.0},   # 손익분기점 (2.0 ATR로 상향)
-    'stage1': {'profit_atr': 3.5, 'trail_atr': 2.0},      # 기본 트레일링 (더 넓게)
-    'stage2': {'profit_atr': 6.0, 'trail_atr': 1.5},      # 타이트 추격
-    'stage3': {'profit_atr': 10.0, 'trail_atr': 1.0},     # 대형 수익 보호
+    'breakeven': {'profit_atr': 1.5, 'trail_atr': 0.0},   # 손익분기점 (빠르게)
+    'stage1': {'profit_atr': 3.5, 'trail_atr': 2.0},      # 기본 트레일링 (넉넉)
+    'stage2': {'profit_atr': 6.0, 'trail_atr': 1.5},      # 중간 추격
+    'stage3': {'profit_atr': 9.0, 'trail_atr': 1.0},      # 대형 수익 보호
 }
 
-# 부분 익절 설정 (Breakout) - 더 늦게 익절
+# 부분 익절 설정 (Breakout) - 수익 확보 균형
 BREAKOUT_PARTIAL_TP = {
-    'tp1': {'profit_atr': 4.0, 'close_pct': 0.25},  # 4 ATR 도달: 25% 청산
-    'tp2': {'profit_atr': 7.0, 'close_pct': 0.25},  # 7 ATR 도달: 추가 25% 청산
+    'tp1': {'profit_atr': 3.5, 'close_pct': 0.25},  # 3.5 ATR 도달: 25% 청산
+    'tp2': {'profit_atr': 6.0, 'close_pct': 0.30},  # 6 ATR 도달: 추가 30% 청산
 }
 
-# 점수 기반 진입 시스템 (최소 점수) - 더 엄격하게
-BREAKOUT_MIN_SCORE = 5
+# 점수 기반 진입 시스템 (최소 점수)
+BREAKOUT_MIN_SCORE = 1
 
-# 손절폭 ATR 배수 (v2.1 - 추세 추종에 맞게 확대)
-BREAKOUT_SL_ATR_MULT = 2.5
+# 저항선 돌파 마진 (0.5% → 0.15%)
+BREAKOUT_RES_MARGIN_PCT = 0.0015
+
+# RSI 진입 범위 (45-70 → 40-80)
+BREAKOUT_RSI_MIN = 40
+BREAKOUT_RSI_MAX = 80
+
+# 손절폭 ATR 배수 (축소)
+BREAKOUT_SL_ATR_MULT = 2.0
 
 # =========================================================
 # Mean Reversion Strategy 개선 파라미터
@@ -92,11 +97,39 @@ MEAN_REV_PARTIAL_TP = {
     'tp3': {'bb_progress': 1.00, 'close_pct': 0.34},  # 중심선: 나머지 청산
 }
 
-# 시간 기반 조기 탈출
-MEAN_REV_TIME_EXIT = {
-    'tighten_candles': 144,   # 144봉 경과 시 손절폭 50% 축소
-    'force_exit_candles': 216  # 216봉 경과 시 강제 청산
-}
+# Mean Reversion 손절 설정
+MEAN_REV_SL_ATR_MULT = 2.0      # 손절 ATR 배수 (기존 하드코딩 3.0에서 축소)
+MEAN_REV_SL_MIN_PCT = 0.004     # 최소 손절 비율 (기존 하드코딩 0.006에서 축소)
+
+# =========================================================
+# Momentum Strategy 파라미터
+# =========================================================
+
+MOM_RSI_ENTRY = 60          # RSI 진입 기준선 (v4 유지)
+MOM_RSI_EXIT_BELOW = 45     # RSI 이 아래로 하락 시 청산 (v4 유지)
+MOM_RSI_OVERBOUGHT = 75     # 과매수 청산 기준
+MOM_RSI_SLOPE_PERIOD = 3    # RSI 기울기 계산 기간
+MOM_ADX_MIN = 30            # 최소 ADX (v4 유지)
+MOM_VOL_MULT = 2.0          # 최소 거래량 배수 (v4 유지)
+MOM_MIN_BULLISH = 3         # 최근 5봉 중 최소 양봉 수
+MOM_SL_ATR_MULT = 2.0       # 손절 ATR 배수
+MOM_SL_MIN_PCT = 0.005      # 최소 손절 비율
+MOM_TIME_EXIT_CANDLES = 30  # 시간 기반 청산 (20→30 완화)
+MOM_TIME_EXIT_MIN_ATR = 0.5 # 시간 청산 최소 수익 ATR (1.0→0.5 완화)
+MOM_PARTIAL_1_PCT = 0.30    # RSI 부분 익절 비율
+MOM_PARTIAL_2_RSI = 80      # 2차 익절 RSI 기준
+MOM_PARTIAL_2_DROP = 15     # 2차 익절 RSI 하락폭
+
+# 트레일링 스탑 파라미터 (더 빨리 수익 보호)
+MOM_TRAIL_BE_ATR = 1.5      # 손익분기점 이동 기준 ATR
+MOM_TRAIL_S1_ATR = 2.5      # Stage1 트레일링 진입 ATR
+MOM_TRAIL_S1_DIST = 1.0     # Stage1 트레일링 거리
+MOM_TRAIL_S2_ATR = 4.0      # Stage2 트레일링 진입 ATR
+MOM_TRAIL_S2_DIST = 0.8     # Stage2 트레일링 거리
+
+# 조기 부분 익절 파라미터
+MOM_PARTIAL_EARLY_ATR = 2.0 # 조기 부분 익절 기준 ATR
+MOM_PARTIAL_EARLY_PCT = 0.25  # 조기 부분 익절 비율
 
 # =========================================================
 # 리스크 관리 개선 파라미터
@@ -133,10 +166,16 @@ RANDOM_SEED = 42             # 재현성을 위한 랜덤 시드
 # =========================================================
 # Walk-Forward 테스트 설정
 # =========================================================
+# =========================================================
+# 시장 레짐 필터 설정
+# =========================================================
+REGIME_ADX_TREND = 25       # ADX 이 값 이상 = 추세 시장
+REGIME_ADX_RANGE = 20       # ADX 이 값 이하 = 횡보 시장
+
 WALK_FORWARD_CONFIG = {
     'in_sample_ratio': 0.7,      # In-sample 비율 (70%) - 전략 검증용
     'out_sample_ratio': 0.3,     # Out-of-sample 비율 (30%) - 실제 테스트
-    'min_window_candles': 5000,  # 최소 윈도우 크기 (캔들 수)
-    'step_candles': 2500,        # 롤링 스텝 (캔들 수) - 비중첩 구간
+    'min_window_candles': 5000,  # 최소 윈도우 크기 (~17일)
+    'step_candles': 1500,        # 롤링 스텝 (~5일)
     'anchored': False,           # True: 시작점 고정 (expanding window), False: 롤링
 }

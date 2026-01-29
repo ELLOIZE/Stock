@@ -13,7 +13,7 @@ from config.settings import (
 )
 from data.fetcher import load_data
 from data.features import compute_indicators
-from strategies import BreakoutStrategy, MeanReversionStrategy
+from strategies import BreakoutStrategy, MeanReversionStrategy, MomentumStrategy
 from engine import PortfolioManager
 from analysis.stats import calculate_stats, aggregate_results, print_aggregated_stats
 
@@ -95,6 +95,10 @@ def run_backtest_on_period(df_period, initial_capital):
     manager.add_strategy(
         MeanReversionStrategy("MEAN_REV"),
         weight=STRATEGY_WEIGHTS['MEAN_REV']
+    )
+    manager.add_strategy(
+        MomentumStrategy("MOMENTUM"),
+        weight=STRATEGY_WEIGHTS['MOMENTUM']
     )
 
     trades, equity_curve = manager.run_backtest(df_period)
@@ -185,9 +189,9 @@ def run_walk_forward_backtest():
     print("=" * 60)
 
     # 데이터 스누핑 방지 확인
-    print(f"\n✓ 비중첩 Out-of-Sample 테스트: {len(periods)}개 기간")
-    print(f"✓ 총 Out-of-Sample 캔들: {sum(p['out_sample'][1] - p['out_sample'][0] for p in periods):,}")
-    print(f"✓ 테스트 커버리지: {sum(p['out_sample'][1] - p['out_sample'][0] for p in periods) / total_candles * 100:.1f}%")
+    print(f"\n[OK] 비중첩 Out-of-Sample 테스트: {len(periods)}개 기간")
+    print(f"[OK] 총 Out-of-Sample 캔들: {sum(p['out_sample'][1] - p['out_sample'][0] for p in periods):,}")
+    print(f"[OK] 테스트 커버리지: {sum(p['out_sample'][1] - p['out_sample'][0] for p in periods) / total_candles * 100:.1f}%")
 
     # 일관성 분석
     returns = aggregated['returns']['all_values']

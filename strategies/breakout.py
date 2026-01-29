@@ -1,5 +1,5 @@
 # =========================================================
-# 추세 추종 전략 (Breakout Strategy) - v2.2 보수적 버전
+# 추세 추종 전략 (Breakout Strategy) - v4.0 완화된 진입
 # =========================================================
 
 from strategies.base import Strategy
@@ -8,30 +8,25 @@ from config.settings import (
     TRAILING_STOP_LEVELS,
     BREAKOUT_PARTIAL_TP,
     BREAKOUT_MIN_SCORE,
-    BREAKOUT_SL_ATR_MULT
+    BREAKOUT_SL_ATR_MULT,
+    BREAKOUT_RES_MARGIN_PCT,
+    BREAKOUT_RSI_MIN,
+    BREAKOUT_RSI_MAX
 )
 
 
 class BreakoutStrategy(Strategy):
     """
-    추세 추종 전략 (길게 먹기) - v2.2 보수적 버전
+    추세 추종 전략 v4.0 - 완화된 진입 조건
 
-    핵심 변경: 가짜 돌파 필터링 강화
-
-    필수 조건 (모두 충족):
-    - 저항선 3봉 연속 돌파 (2봉 → 3봉으로 강화)
-    - 종가 > EMA200 (장기 상승 추세)
-    - EMA21 > EMA50 > EMA200 (정배열)
-    - ADX > 25 (강한 추세만)
-    - RSI 45-70 (과열/과매도 아님)
+    진입 조건:
+    - 레짐: TREND_UP만
+    - 저항선 1봉 돌파 (2봉→1봉 완화) + 0.15% 마진 (0.5%→0.15%)
+    - EMA21 > EMA50 (EMA200 제거)
+    - 종가 > EMA21
+    - RSI 40-80 (45-70에서 확대)
     - 최근 5봉 중 3봉 이상 양봉
-
-    점수 조건 (3점 이상):
-    - 거래량 >= 1.5배 평균: +1점
-    - 거래량 >= 2.0배 평균: +1점 (보너스)
-    - ADX > 35: +1점 (강한 추세)
-    - BB폭 증가 10% 이상: +1점
-    - 연속 양봉 3개 이상: +1점
+    - 점수 >= 1 (2→1)
     """
 
     def __init__(self, name="BREAKOUT"):
@@ -67,53 +62,43 @@ class BreakoutStrategy(Strategy):
 
     def _calculate_entry_score(self, df, i):
         """
-        점수 기반 진입 조건 계산 (v2.2 보수적)
+        점수 기반 진입 조건 계산 (v4.0)
 
         Returns:
             tuple: (필수조건 충족여부, 점수)
         """
         row = df.iloc[i]
         prev = df.iloc[i-1]
-        prev2 = df.iloc[i-2]
-        prev3 = df.iloc[i-3]
 
         # ========== 필수 조건 체크 ==========
 
-        # 1. 저항선 3봉 연속 돌파 (강화)
-        res_list = safe_json_list(prev3.get('resistanceLevels_5m', []))
-        target_res = nearest_resistance_above(prev3['close'], res_list)
+        # 1. 저항선 1봉 돌파 (완화: 2봉→1봉, 마진 0.5%→0.15%)
+        res_list = safe_json_list(prev.get('resistanceLevels_5m', []))
+        target_res = nearest_resistance_above(prev['close'], res_list)
         if target_res is None:
             return False, 0
 
-        # 3봉 연속 돌파 확인
-        if not (prev2['close'] > target_res and
-                prev['close'] > target_res and
-                row['close'] > target_res):
+        margin = target_res * BREAKOUT_RES_MARGIN_PCT
+        if not (row['close'] > target_res + margin):
             return False, 0
 
-        # 2. EMA 정배열 (EMA21 > EMA50 > EMA200)
+        # 2. EMA21 > EMA50 (EMA200 제거하여 완화)
         ema21 = row.get('ema21', 0)
         ema50 = row.get('ema50', 0)
-        ema200 = row.get('ema200', 0)
 
-        if not (ema21 > ema50 > ema200):
+        if not (ema21 > ema50):
             return False, 0
 
-        # 3. 종가 > EMA21 (단기 추세 위에)
+        # 3. 종가 > EMA21
         if row['close'] < ema21:
             return False, 0
 
-        # 4. ADX > 25 (강한 추세만)
-        adx = row.get('adx', 0)
-        if adx <= 25:
-            return False, 0
-
-        # 5. RSI 45-70 (과열/과매도 아님)
+        # 4. RSI 범위 확대 (40-80)
         rsi = row.get('rsi', 50)
-        if rsi < 45 or rsi > 70:
+        if rsi < BREAKOUT_RSI_MIN or rsi > BREAKOUT_RSI_MAX:
             return False, 0
 
-        # 6. 최근 5봉 중 3봉 이상 양봉
+        # 5. 최근 5봉 중 3봉 이상 양봉
         bullish_count = self._count_recent_bullish(df, i, 5)
         if bullish_count < 3:
             return False, 0
@@ -130,8 +115,9 @@ class BreakoutStrategy(Strategy):
         if vol_ma > 0 and row['volume'] >= vol_ma * 2.0:
             score += 1
 
-        # ADX > 35: +1점 (매우 강한 추세)
-        if adx > 35:
+        # ADX > 30: +1점 (강한 추세)
+        adx = row.get('adx', 0)
+        if adx > 30:
             score += 1
 
         # BB폭 10% 이상 증가: +1점
@@ -149,11 +135,20 @@ class BreakoutStrategy(Strategy):
         if consecutive >= 3:
             score += 1
 
+        # EMA 3중 정배열 보너스: +1점
+        ema200 = row.get('ema200', 0)
+        if ema21 > ema50 > ema200:
+            score += 1
+
         return True, score
 
     def check_entry(self, df, i):
-        """점수 기반 진입 신호 확인"""
+        """레짐 기반 진입 신호 확인"""
         if i < 200:
+            return False
+
+        # 레짐 게이트: TREND_UP만 진입
+        if df.iloc[i].get('regime') != 'TREND_UP':
             return False
 
         required_passed, score = self._calculate_entry_score(df, i)
@@ -161,13 +156,10 @@ class BreakoutStrategy(Strategy):
         if not required_passed:
             return False
 
-        # 최소 점수 3점 (필수 조건이 이미 엄격하므로 낮춤)
-        return score >= 3
+        return score >= BREAKOUT_MIN_SCORE
 
     def check_exit(self, row, entry_price, entry_sl, atr, trade_info=None):
-        """
-        4단계 트레일링 스탑 + 부분 익절 (v2.2)
-        """
+        """4단계 트레일링 스탑 + 부분 익절"""
         new_sl = entry_sl
         partial_close = None
 
@@ -217,6 +209,6 @@ class BreakoutStrategy(Strategy):
         return new_sl, None, partial_close
 
     def get_stop_loss_dist(self, row):
-        """손절폭 계산 (3.0 ATR - 더 넓게)"""
+        """손절폭 계산"""
         atr = row.get('atr', 0)
-        return max(atr * 3.0, row['close'] * 0.006)
+        return max(atr * BREAKOUT_SL_ATR_MULT, row['close'] * 0.004)

@@ -24,3 +24,13 @@ test.json
 # OS
 .DS_Store
 Thumbs.db
+
+.omc/
+
+.claude/
+
+__pycache__/
+
+*.log
+
+nul

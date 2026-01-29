@@ -23,28 +23,46 @@ def get_binance_client():
     return Client(BINANCE_API_KEY, BINANCE_API_SECRET)
 
 
+def _create_exchange():
+    """접속 가능한 거래소 생성 (Binance 우선, 실패 시 Bybit 폴백)"""
+    exchanges = [
+        ('binance', lambda: ccxt.binance({'timeout': 10000})),
+        ('bybit', lambda: ccxt.bybit({'timeout': 15000})),
+        ('okx', lambda: ccxt.okx({'timeout': 15000})),
+    ]
+    for name, factory in exchanges:
+        try:
+            ex = factory()
+            ex.fetch_ohlcv('BTC/USDT', '5m', limit=1)
+            print(f"[거래소 연결] {name} 성공")
+            return ex, name
+        except Exception:
+            print(f"[거래소 연결] {name} 실패, 다음 시도...")
+    raise ConnectionError("모든 거래소 연결 실패")
+
+
 def get_historical_data_single(symbol="BTC/USDT", max_rows=None):
     """
-    바이낸스에서 5분봉 데이터 수집
-    
+    거래소에서 5분봉 데이터 수집 (Binance 우선, Bybit/OKX 폴백)
+
     Args:
         symbol: 심볼 (예: "BTC/USDT")
         max_rows: 수집할 캔들 개수 (기본값: config에서 설정)
-    
+
     Returns:
         DataFrame: OHLCV 데이터
     """
     if max_rows is None:
         max_rows = MAX_CANDLES
-        
-    binance = ccxt.binance()
-    
+
+    exchange, ex_name = _create_exchange()
+
     timeframe = TIMEFRAME
-    limit_per_call = 1000  # 바이낸스 최대 요청 개수
-    
+    limit_per_call = 200 if ex_name == 'bybit' else 1000
+
     # 시작 시간 계산 (현재 시간 - max_rows개 캔들 시간)
     duration_ms = max_rows * 5 * 60 * 1000
-    now = binance.milliseconds()
+    now = exchange.milliseconds()
     since = now - duration_ms
     
     all_ohlcv = []
@@ -61,7 +79,7 @@ def get_historical_data_single(symbol="BTC/USDT", max_rows=None):
             remaining = max_rows - len(all_ohlcv)
             limit = min(remaining, limit_per_call)
             
-            ohlcv = binance.fetch_ohlcv(symbol, timeframe, since=since, limit=limit_per_call)
+            ohlcv = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=limit_per_call)
             
             if not ohlcv:
                 print("더 이상 가져올 데이터가 없습니다.")
@@ -76,7 +94,7 @@ def get_historical_data_single(symbol="BTC/USDT", max_rows=None):
             
             time.sleep(0.2)  # 속도 제한 증가
             
-            if len(ohlcv) < limit_per_call and len(all_ohlcv) < max_rows:
+            if len(ohlcv) < limit_per_call * 0.5 and len(all_ohlcv) < max_rows:
                 break
             
             retry_count = 0  # 성공 시 리셋
