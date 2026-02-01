@@ -399,10 +399,11 @@ MOMENTUM           23   300.00   13.04
 ## 폴더 구조
 
 ```
-military_service_0119/
+military_service/
 │
 ├── config/
-│   └── settings.py          # 모든 설정값 (v3 파라미터 포함)
+│   ├── settings.py          # 백테스트 설정값
+│   └── live_settings.py     # 라이브 트레이딩 설정
 │
 ├── data/
 │   ├── fetcher.py           # Binance API 데이터 수집
@@ -410,12 +411,20 @@ military_service_0119/
 │
 ├── strategies/
 │   ├── base.py              # 전략 추상 클래스
-│   ├── breakout.py          # Breakout 전략 (v3 개선)
-│   ├── mean_reversion.py    # Mean Reversion 전략 (v3 개선)
-│   └── momentum.py          # Momentum 전략 (v3 신규)
+│   ├── breakout.py          # Breakout 전략
+│   ├── mean_reversion.py    # Mean Reversion 전략
+│   └── momentum.py          # Momentum 전략
 │
 ├── engine/
-│   └── portfolio.py         # 포트폴리오 매니저 (v3 개선)
+│   └── portfolio.py         # 포트폴리오 매니저 (백테스트)
+│
+├── live/                    # 라이브 트레이딩 모듈
+│   ├── client.py            # Binance Futures API 클라이언트
+│   ├── data_manager.py      # 실시간 데이터 관리
+│   ├── order_manager.py     # 주문 실행
+│   ├── position_manager.py  # 포지션 관리
+│   ├── state.py             # 상태 저장/복구
+│   └── bot.py               # 메인 봇 루프
 │
 ├── analysis/
 │   ├── stats.py             # 통계 계산
@@ -425,14 +434,19 @@ military_service_0119/
 │   └── helpers.py           # 유틸리티 함수
 │
 ├── output/
-│   ├── charts/              # HTML 차트
-│   └── reports/             # Excel, CSV 리포트
+│   ├── charts/              # 백테스트 차트
+│   ├── reports/             # 백테스트 리포트
+│   └── live_reports/        # 라이브 거래 리포트
+│
+├── logs/                    # 라이브 로그
+├── state/                   # 봇 상태 저장
 │
 ├── main.py                  # 단일 백테스트 실행
 ├── multi_period_backtest.py # Walk-Forward 백테스트
 ├── fetch_data.py            # 데이터 수집 스크립트
+├── run_live.py              # 라이브 트레이딩 실행
 │
-├── CHANGELOG_v2.md          # v2 상세 변경 내역
+├── CHANGELOG_v2.md          # 변경 내역
 ├── CLAUDE.md                # Claude Code 가이드
 └── README.md                # 이 문서
 ```
@@ -461,10 +475,153 @@ test.json 파일이 없습니다. fetch_data.py를 먼저 실행하세요.
 
 ---
 
+## 라이브 트레이딩
+
+백테스트된 전략을 Binance Futures에서 실시간으로 실행할 수 있습니다.
+
+### 명령어
+
+```bash
+# 상태 확인 (API 연결, 잔고, 포지션 조회)
+python run_live.py --status
+
+# 드라이런 모드 (실제 주문 없이 테스트)
+python run_live.py --dry-run
+
+# 실제 트레이딩 시작
+python run_live.py
+
+# 모든 포지션 강제 청산
+python run_live.py --close-all
+```
+
+### 봇 동작 방식
+
+1. **WebSocket 연결**: Binance Futures에서 5분봉 실시간 수신
+2. **캔들 완성 시**: 매 5분마다 전략 체크
+3. **진입/청산**: 백테스트와 동일한 로직 사용
+4. **무한 루프**: 종료할 때까지 계속 실행
+
+### 종료 방법
+
+```
+Ctrl + C
+```
+
+**종료 시 자동 수행:**
+- 상태 저장 (`state/bot_state.json`)
+- 거래 내역 CSV 저장 (`output/live_reports/`)
+- 거래 차트 HTML 저장
+- 거래 요약 출력
+
+### 설정 (`config/live_settings.py`)
+
+```python
+# 전략 활성화
+LIVE_STRATEGIES = {
+    'BREAKOUT': True,
+    'MEAN_REV': False,
+    'MOMENTUM': True,
+}
+
+# 종목 (기본: BTCUSDT)
+LIVE_SYMBOL = "BTCUSDT"
+
+# 레버리지 (기본: 1x)
+LIVE_LEVERAGE = 1
+
+# 최대 포지션 크기 (USDT)
+MAX_POSITION_USDT = 100
+
+# 일일 손실 한도
+DAILY_LOSS_LIMIT_PCT = 0.05  # 5%
+
+# 드라이런 모드 (True: 실제 주문 안함)
+DRY_RUN_MODE = False
+```
+
+### 출력 파일
+
+| 파일 | 경로 |
+|------|------|
+| 실시간 로그 | `logs/bot_YYYYMMDD.log` |
+| 상태 저장 | `state/bot_state.json` |
+| 거래 내역 | `output/live_reports/live_trades_*.csv` |
+| 거래 차트 | `output/live_reports/live_chart_*.html` |
+
+### 추천 실행 순서
+
+```bash
+# 1단계: API 연결 확인
+python run_live.py --status
+
+# 2단계: 드라이런으로 테스트 (수 시간)
+python run_live.py --dry-run
+
+# 3단계: 소액으로 실제 시작
+# (MAX_POSITION_USDT = 10 으로 설정 후)
+python run_live.py
+```
+
+### 로그 예시
+
+```
+봇 초기화 완료
+  - 심볼: BTCUSDT
+  - 인터벌: 5m
+  - 레버리지: 1x
+  - 활성 전략: ['BREAKOUT', 'MOMENTUM']
+봇 시작!
+WebSocket 연결 성공
+
+# 매 5분마다
+캔들 완성: 2026-02-01 19:05:00 | Close: 102500.50
+
+# 진입 시
+진입 시도: BREAKOUT | 가격: 102500.00 | 수량: 0.001 | SL: 102000.00
+롱 진입 성공: 0.001 @ 102505.50
+
+# 청산 시
+부분 청산: BREAKOUT | PARTIAL_TP | PnL: $5.50 (0.54%)
+포지션 청산: BREAKOUT | Trailing_Win | PnL: $12.30 (1.20%)
+
+# 종료 시
+중지 요청...
+==================================================
+거래 요약
+==================================================
+총 거래 수: 15
+승률: 53.3%
+총 손익: $45.20
+==================================================
+봇 종료
+```
+
+### 지원 종목
+
+`LIVE_SYMBOL`을 변경하여 다른 종목 거래 가능:
+
+| 심볼 | 코인 |
+|------|------|
+| `BTCUSDT` | 비트코인 |
+| `ETHUSDT` | 이더리움 |
+| `BNBUSDT` | 바이낸스 코인 |
+| `SOLUSDT` | 솔라나 |
+| `XRPUSDT` | 리플 |
+
+### 주의사항
+
+- **소액으로 시작**: `MAX_POSITION_USDT`를 낮게 설정
+- **드라이런 먼저**: `--dry-run`으로 충분히 테스트
+- **로그 모니터링**: `logs/` 폴더에서 실시간 확인
+- **네트워크 안정성**: 끊김 시 자동 재연결 (최대 10회)
+
+---
+
 ## 라이선스
 
 개인 학습 및 연구 목적으로 작성되었습니다.
 
 ---
 
-*v3.0 - 2026-01-29 업데이트*
+*v3.1 - 2026-02-01 업데이트 (라이브 트레이딩 추가)*

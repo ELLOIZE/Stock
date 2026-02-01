@@ -20,9 +20,16 @@ python main.py
 
 # Run multi-period backtest (100 random periods, 5000 candles each)
 python multi_period_backtest.py
+
+# Live trading
+python run_live.py              # Start live trading bot
+python run_live.py --dry-run    # Dry run mode (no real orders)
+python run_live.py --status     # Check current status
+python run_live.py --close-all  # Close all positions
 ```
 
 Output files are generated in `output/reports/` (Excel, CSV) and `output/charts/` (HTML, PNG).
+Live trading logs are saved in `logs/` and state files in `state/`.
 
 ## Architecture
 
@@ -38,6 +45,14 @@ strategies/mean_reversion.py - Counter-trend strategy (40% allocation)
 engine/portfolio.py    - PortfolioManager orchestrates strategies, position tracking
 analysis/stats.py      - Statistics calculation and multi-period aggregation
 analysis/visualizer.py - Plotly candlestick charts with trade markers
+
+live/client.py         - Binance Futures REST/WebSocket client
+live/data_manager.py   - Real-time candle data + indicator calculation
+live/order_manager.py  - Market order execution
+live/position_manager.py - Position tracking, trailing stop, partial exit
+live/state.py          - State save/restore for bot restart
+live/bot.py            - Main trading bot loop
+config/live_settings.py - Live trading configuration
 ```
 
 ### Execution Flow
@@ -73,9 +88,19 @@ Extend `Strategy` base class and implement three methods:
 - `BACKTEST_WINDOW_SIZE`: 5000 candles per period (~17 days)
 - `NUM_PERIODS`: 100 random periods for multi-period testing
 
+## Live Trading Configuration (config/live_settings.py)
+
+- `LIVE_STRATEGIES`: Enable/disable strategies {'BREAKOUT': True, 'MEAN_REV': True, 'MOMENTUM': True}
+- `LIVE_SYMBOL`: Trading pair (default: BTCUSDT)
+- `LIVE_LEVERAGE`: Leverage multiplier (default: 1x)
+- `MAX_POSITION_USDT`: Max position size per strategy
+- `DAILY_LOSS_LIMIT_PCT`: Daily loss limit (default: 5%)
+- `DRY_RUN_MODE`: Simulation mode without real orders
+
 ## Technical Notes
 
 - Long positions only (no shorting)
 - ATR-based stop loss and trailing stops
 - Data format: JSON with OHLCV floats, string-encoded resistance levels
-- No automated test framework configured
+- Live trading uses WebSocket for real-time data, REST API for orders
+- State is automatically saved every 60 seconds for bot restart recovery
