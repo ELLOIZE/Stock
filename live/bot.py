@@ -16,7 +16,7 @@ import pandas as pd
 # 프로젝트 루트 경로 추가
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config.settings import INITIAL_CAPITAL, STRATEGY_WEIGHTS
+from config.settings import INITIAL_CAPITAL, STRATEGY_WEIGHTS, ENABLE_SHORT
 from config.live_settings import (
     LIVE_STRATEGIES, LIVE_SYMBOL, LIVE_INTERVAL, LIVE_LEVERAGE,
     MAX_POSITION_USDT, DAILY_LOSS_LIMIT_PCT, MAX_CONCURRENT_POSITIONS,
@@ -29,7 +29,8 @@ from live.order_manager import OrderManager
 from live.position_manager import PositionManager
 from live.state import StateManager, BotState
 
-from strategies import BreakoutStrategy, MeanReversionStrategy, MomentumStrategy
+from strategies import (BreakoutStrategy, MeanReversionStrategy, MomentumStrategy,
+                         ShortBreakoutStrategy, ShortMeanReversionStrategy, ShortMomentumStrategy)
 
 # =========================================================
 # 로깅 설정
@@ -205,7 +206,27 @@ class TradingBot:
             self.strategies['MOMENTUM'] = strategy
             self.position_manager.register_strategy(strategy)
             logger.info("  - Momentum 전략 등록")
-    
+
+        # 숏 전략 등록
+        if ENABLE_SHORT:
+            if LIVE_STRATEGIES.get('SHORT_BREAKOUT', False):
+                strategy = ShortBreakoutStrategy("SHORT_BREAKOUT")
+                self.strategies['SHORT_BREAKOUT'] = strategy
+                self.position_manager.register_strategy(strategy)
+                logger.info("  - Short Breakout 전략 등록")
+
+            if LIVE_STRATEGIES.get('SHORT_MEAN_REV', False):
+                strategy = ShortMeanReversionStrategy("SHORT_MEAN_REV")
+                self.strategies['SHORT_MEAN_REV'] = strategy
+                self.position_manager.register_strategy(strategy)
+                logger.info("  - Short Mean Reversion 전략 등록")
+
+            if LIVE_STRATEGIES.get('SHORT_MOMENTUM', False):
+                strategy = ShortMomentumStrategy("SHORT_MOMENTUM")
+                self.strategies['SHORT_MOMENTUM'] = strategy
+                self.position_manager.register_strategy(strategy)
+                logger.info("  - Short Momentum 전략 등록")
+
     def _restore_state(self):
         """이전 상태 복원"""
         try:
@@ -373,7 +394,10 @@ class TradingBot:
         
         # 손절폭 계산
         sl_dist = strategy.get_stop_loss_dist(row)
-        stop_loss = current_price - sl_dist
+        if strategy.direction == 'SHORT':
+            stop_loss = current_price + sl_dist
+        else:
+            stop_loss = current_price - sl_dist
         
         # 포지션 크기 계산
         risk_amount = min(MAX_POSITION_USDT, self.bot_state.current_capital * 0.01)
@@ -401,7 +425,8 @@ class TradingBot:
             entry_price=current_price,
             quantity=quantity,
             stop_loss=stop_loss,
-            entry_index=current_index
+            entry_index=current_index,
+            direction=strategy.direction
         )
         
         if position:

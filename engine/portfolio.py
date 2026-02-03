@@ -85,11 +85,14 @@ class PortfolioManager:
         # 최악의 경우 거래 중단
         return 0.0, False
 
-    def _get_concurrent_position_count(self):
-        """현재 활성 포지션 수"""
-        return sum(1 for t in self.active_trades.values() if t is not None)
+    def _get_concurrent_position_count(self, direction=None):
+        """현재 활성 포지션 수 (방향별 필터 가능)"""
+        if direction is None:
+            return sum(1 for t in self.active_trades.values() if t is not None)
+        return sum(1 for t in self.active_trades.values()
+                   if t is not None and t.get('direction', 'LONG') == direction)
 
-    def _calculate_position_size(self, atr, price, sl_dist):
+    def _calculate_position_size(self, atr, price, sl_dist, direction='LONG'):
         """
         동적 포지션 사이징
 
@@ -109,7 +112,7 @@ class PortfolioManager:
         adjusted_risk = base_risk * dd_mult
 
         # 동시 포지션 시 리스크 축소
-        active_count = self._get_concurrent_position_count()
+        active_count = self._get_concurrent_position_count(direction)
         if active_count >= 1:  # 이미 포지션이 있으면
             if active_count >= MAX_SAME_DIRECTION_POSITIONS:
                 return 0, False  # 최대 포지션 도달
@@ -152,11 +155,16 @@ class PortfolioManager:
     def _handle_partial_exit(self, strat_name, trade, row, timestamp, exit_price, exit_reason, close_pct):
         """부분 청산 처리"""
         atr = row.get('atr', 0) if hasattr(row, 'get') else 0
-        actual_exit_price = self._apply_slippage(exit_price, atr, 'sell')
+        direction = trade.get('direction', 'LONG')
+        slip_dir = 'sell' if direction == 'LONG' else 'buy'
+        actual_exit_price = self._apply_slippage(exit_price, atr, slip_dir)
 
         # 청산할 수량 계산
         close_size = trade['remaining_size'] * close_pct
-        pnl = (actual_exit_price - trade['entry_price']) * close_size
+        if direction == 'SHORT':
+            pnl = (trade['entry_price'] - actual_exit_price) * close_size
+        else:
+            pnl = (actual_exit_price - trade['entry_price']) * close_size
         fee = (trade['entry_price'] + exit_price) * close_size * self.fee_rate
         net_pnl = pnl - fee
 
@@ -175,7 +183,8 @@ class PortfolioManager:
             'net_pnl': net_pnl,
             'exit_reason': f"PARTIAL_{exit_reason}",
             'type': strat_name,
-            'is_partial': True
+            'is_partial': True,
+            'direction': direction
         })
 
         # 잔여 수량이 거의 없으면 포지션 종료
@@ -188,10 +197,15 @@ class PortfolioManager:
     def _handle_exit(self, strat_name, trade, row, timestamp, exit_price, exit_reason):
         """전체 포지션 청산 처리"""
         atr = row.get('atr', 0) if hasattr(row, 'get') else 0
-        actual_exit_price = self._apply_slippage(exit_price, atr, 'sell')
+        direction = trade.get('direction', 'LONG')
+        slip_dir = 'sell' if direction == 'LONG' else 'buy'
+        actual_exit_price = self._apply_slippage(exit_price, atr, slip_dir)
 
         remaining_size = trade.get('remaining_size', trade['size'])
-        pnl = (actual_exit_price - trade['entry_price']) * remaining_size
+        if direction == 'SHORT':
+            pnl = (trade['entry_price'] - actual_exit_price) * remaining_size
+        else:
+            pnl = (actual_exit_price - trade['entry_price']) * remaining_size
         fee = (trade['entry_price'] + exit_price) * remaining_size * self.fee_rate
         net_pnl = pnl - fee
 
@@ -206,7 +220,8 @@ class PortfolioManager:
             'net_pnl': net_pnl,
             'exit_reason': exit_reason,
             'type': strat_name,
-            'is_partial': False
+            'is_partial': False,
+            'direction': direction
         })
 
         self.active_trades[strat_name] = None
@@ -253,16 +268,26 @@ class PortfolioManager:
             exit_reason = force_exit_reason
             exit_price = None
 
-            # SL 체크
-            if row['low'] <= trade['entry_sl']:
-                exit_price = trade['entry_sl']
-                if exit_price > trade['entry_price']:
-                    exit_reason = "Trailing_Win"
-                else:
-                    exit_reason = "SL"
+            direction = trade.get('direction', 'LONG')
+
+            # SL 체크 (방향별)
+            if direction == 'SHORT':
+                if row['high'] >= trade['entry_sl']:
+                    exit_price = trade['entry_sl']
+                    if exit_price < trade['entry_price']:
+                        exit_reason = "Trailing_Win"
+                    else:
+                        exit_reason = "SL"
+            else:
+                if row['low'] <= trade['entry_sl']:
+                    exit_price = trade['entry_sl']
+                    if exit_price > trade['entry_price']:
+                        exit_reason = "Trailing_Win"
+                    else:
+                        exit_reason = "SL"
 
             # 강제 익절/청산
-            elif force_exit_reason and partial_close is None:
+            if exit_price is None and force_exit_reason and partial_close is None:
                 exit_price = row['close']
 
             # 포지션 종료 실행
@@ -300,22 +325,29 @@ class PortfolioManager:
                 sl_dist = algo.get_stop_loss_dist(row)
 
                 # 동적 포지션 사이징
-                size, allow_entry = self._calculate_position_size(atr, row['close'], sl_dist)
+                size, allow_entry = self._calculate_position_size(atr, row['close'], sl_dist, algo.direction)
 
                 if not allow_entry or size <= 0:
                     continue  # 진입 불가
 
                 # 진입 실행 (슬리피지 적용)
-                actual_entry_price = self._apply_slippage(row['close'], atr, 'buy')
+                slip_dir = 'buy' if algo.direction == 'LONG' else 'sell'
+                actual_entry_price = self._apply_slippage(row['close'], atr, slip_dir)
+
+                if algo.direction == 'SHORT':
+                    entry_sl = actual_entry_price + sl_dist
+                else:
+                    entry_sl = actual_entry_price - sl_dist
 
                 self.active_trades[name] = {
                     'entry_price': actual_entry_price,
-                    'entry_sl': actual_entry_price - sl_dist,
+                    'entry_sl': entry_sl,
                     'size': size,
                     'original_size': size,
                     'remaining_size': size,
                     'entry_time': timestamp,
-                    'entry_index': i
+                    'entry_index': i,
+                    'direction': algo.direction
                 }
 
                 # 전략의 부분 익절 상태 초기화
@@ -345,7 +377,11 @@ class PortfolioManager:
             unrealized = 0.0
             for trade in self.active_trades.values():
                 if trade is not None:
-                    unrealized += (row['close'] - trade['entry_price']) * trade.get('remaining_size', trade.get('size', 0))
+                    remaining = trade.get('remaining_size', trade.get('size', 0))
+                    if trade.get('direction', 'LONG') == 'SHORT':
+                        unrealized += (trade['entry_price'] - row['close']) * remaining
+                    else:
+                        unrealized += (row['close'] - trade['entry_price']) * remaining
             self.equity_curve.append({'timestamp': timestamp, 'equity': self.current_capital + unrealized})
 
             atr = row.get('atr', 0)

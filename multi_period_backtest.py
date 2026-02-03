@@ -9,11 +9,12 @@ warnings.filterwarnings("ignore")
 
 from config.settings import (
     INITIAL_CAPITAL, DATA_FILE, STRATEGY_WEIGHTS,
-    BACKTEST_WINDOW_SIZE, WALK_FORWARD_CONFIG
+    BACKTEST_WINDOW_SIZE, WALK_FORWARD_CONFIG, ENABLE_SHORT
 )
 from data.fetcher import load_data
 from data.features import compute_indicators
-from strategies import BreakoutStrategy, MeanReversionStrategy, MomentumStrategy
+from strategies import (BreakoutStrategy, MeanReversionStrategy, MomentumStrategy,
+                         ShortBreakoutStrategy, ShortMeanReversionStrategy, ShortMomentumStrategy)
 from engine import PortfolioManager
 from analysis.stats import calculate_stats, aggregate_results, print_aggregated_stats
 
@@ -100,6 +101,20 @@ def run_backtest_on_period(df_period, initial_capital):
         MomentumStrategy("MOMENTUM"),
         weight=STRATEGY_WEIGHTS['MOMENTUM']
     )
+
+    if ENABLE_SHORT:
+        manager.add_strategy(
+            ShortBreakoutStrategy("SHORT_BREAKOUT"),
+            weight=STRATEGY_WEIGHTS['SHORT_BREAKOUT']
+        )
+        manager.add_strategy(
+            ShortMeanReversionStrategy("SHORT_MEAN_REV"),
+            weight=STRATEGY_WEIGHTS['SHORT_MEAN_REV']
+        )
+        manager.add_strategy(
+            ShortMomentumStrategy("SHORT_MOMENTUM"),
+            weight=STRATEGY_WEIGHTS['SHORT_MOMENTUM']
+        )
 
     trades, equity_curve = manager.run_backtest(df_period)
     return trades, equity_curve, manager.current_capital

@@ -47,9 +47,12 @@ BB_STD = 2
 
 # 전략별 가중치
 STRATEGY_WEIGHTS = {
-    'BREAKOUT': 0.4,
-    'MEAN_REV': 0.3,
-    'MOMENTUM': 0.3
+    'BREAKOUT': 0.2,
+    'MEAN_REV': 0.15,
+    'MOMENTUM': 0.15,
+    'SHORT_BREAKOUT': 0.2,
+    'SHORT_MEAN_REV': 0.15,
+    'SHORT_MOMENTUM': 0.15,
 }
 
 # =========================================================
@@ -132,6 +135,33 @@ MOM_PARTIAL_EARLY_ATR = 2.0 # 조기 부분 익절 기준 ATR
 MOM_PARTIAL_EARLY_PCT = 0.25  # 조기 부분 익절 비율
 
 # =========================================================
+# SHORT 전략 전용 파라미터
+# =========================================================
+
+# SHORT Breakout 파라미터
+SHORT_BREAKOUT_MIN_SCORE = 5           # 점수 더 엄격하게 (3 → 5)
+SHORT_BREAKOUT_SL_ATR_MULT = 3.5       # SL 더 넓힘 (3.0 → 3.5)
+SHORT_BREAKOUT_RSI_MIN = 10            # RSI 하한 더 완화 (15 → 10)
+SHORT_BREAKOUT_RSI_MAX = 55            # RSI 상한 더 타이트 (65 → 55)
+
+# SHORT Mean Reversion 파라미터
+SHORT_MR_RSI_THRESHOLD = 72            # RSI 더 엄격 (68 → 72, 더 확실한 과매수만)
+SHORT_MR_SL_ATR_MULT = 3.5             # SL 넓힘 (3.0 → 3.5)
+SHORT_MR_SL_MIN_PCT = 0.008            # 최소 SL 넓힘 (0.006 → 0.008)
+SHORT_MR_REQUIRE_BEARISH = True         # 음봉 확인 필수 (LONG: 양봉 필수)
+SHORT_MR_EMA200_DIST = 1.06            # EMA200 거리 더 완화 (1.04 → 1.06)
+SHORT_MR_PROTECTION_ATR = 2.5          # 보호 청산 여유 (2.0 → 2.5)
+
+# SHORT Momentum 파라미터
+SHORT_MOM_RSI_ENTRY = 30               # RSI 더 낮아야 진입 (40 → 30, 더 확실한 하락)
+SHORT_MOM_RSI_EXIT = 62                # EXIT_MOM_LOST 더 완화 (58 → 62, 더 오래 홀딩)
+SHORT_MOM_SL_ATR_MULT = 3.5            # SL 대폭 넓힘 (2.8 → 3.5)
+SHORT_MOM_SL_MIN_PCT = 0.008           # 최소 SL 넓힘 (0.006 → 0.008)
+SHORT_MOM_ADX_MIN = 35                 # ADX 더 엄격 (28 → 35, 더 강한 추세만)
+SHORT_MOM_VOL_MULT = 2.5               # 거래량 더 엄격 (1.8 → 2.5)
+SHORT_MOM_TIME_EXIT_CANDLES = 50        # 시간 청산 더 완화 (40 → 50)
+
+# =========================================================
 # 리스크 관리 개선 파라미터
 # =========================================================
 
@@ -150,9 +180,12 @@ DRAWDOWN_RISK_TIERS = {
     'halt': {'max_dd': float('inf'), 'risk_mult': 0.0, 'allow_entry': False},  # DD > 6%
 }
 
-# 동시 포지션 관리
+# 동시 포지션 관리 (방향별 독립 적용: LONG 최대 2, SHORT 최대 2)
 MAX_SAME_DIRECTION_POSITIONS = 2
 CONCURRENT_POSITION_RISK_MULT = 0.7  # 동시 진입 시 리스크 축소
+
+# 숏 전략 활성화 토글
+ENABLE_SHORT = True
 
 # 파일 경로
 DATA_FILE = "test.json"

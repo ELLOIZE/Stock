@@ -12,6 +12,9 @@ LIVE_STRATEGIES = {
     'BREAKOUT': False,
     'MEAN_REV': True,
     'MOMENTUM': False,
+    'SHORT_BREAKOUT': False,
+    'SHORT_MEAN_REV': False,
+    'SHORT_MOMENTUM': False,
 }
 
 # =========================================================

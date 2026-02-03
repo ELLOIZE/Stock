@@ -111,24 +111,40 @@ class ResultVisualizer:
 
             # 매매 포인트 마커
             for _, trade in strat_trades.iterrows():
-                # 매수 (진입)
+                direction = trade.get('direction', 'LONG')
+                is_short = direction == 'SHORT'
+
+                # 진입 마커
+                if is_short:
+                    entry_text = "Short"
+                    entry_color = "#FF6D00"  # 오렌지 (숏 진입)
+                    entry_ay = -30  # 위에서 아래로
+                else:
+                    entry_text = "Buy"
+                    entry_color = "#2962FF"  # 파랑 (롱 진입)
+                    entry_ay = 30  # 아래에서 위로
+
                 fig.add_annotation(
                     x=trade['entry_time'], y=trade['entry_price'],
-                    text="Buy", showarrow=True, arrowhead=2,
-                    arrowcolor="#2962FF", arrowsize=1, ax=0, ay=30,
-                    bgcolor="#2962FF", font=dict(color="white", size=9),
+                    text=entry_text, showarrow=True, arrowhead=2,
+                    arrowcolor=entry_color, arrowsize=1, ax=0, ay=entry_ay,
+                    bgcolor=entry_color, font=dict(color="white", size=9),
                     row=1, col=1
                 )
 
-                # 매도 (청산)
+                # 청산 마커
                 is_win = trade['net_pnl'] > 0
                 color = "#00C853" if is_win else "#D50000"
-                text = f"{'Win' if is_win else 'Loss'}"
-                
+                exit_label = f"{'Win' if is_win else 'Loss'}"
+                if is_short:
+                    exit_ay = 30  # 숏 청산: 아래에서 위로
+                else:
+                    exit_ay = -30  # 롱 청산: 위에서 아래로
+
                 fig.add_annotation(
                     x=trade['exit_time'], y=trade['exit_price'],
-                    text=text, showarrow=True, arrowhead=2,
-                    arrowcolor=color, arrowsize=1, ax=0, ay=-30,
+                    text=exit_label, showarrow=True, arrowhead=2,
+                    arrowcolor=color, arrowsize=1, ax=0, ay=exit_ay,
                     bgcolor=color, font=dict(color="white", size=9),
                     row=1, col=1
                 )

@@ -274,7 +274,7 @@ class OrderManager:
             # 롱 포지션이면 매도로 청산
             if position_amt > 0:
                 return self.place_market_sell(abs(position_amt), reduce_only=True)
-            # 숏 포지션이면 매수로 청산 (현재 롱 전용이라 해당 안됨)
+            # 숏 포지션이면 매수로 청산
             else:
                 return self.place_market_buy(abs(position_amt))
                 

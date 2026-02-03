@@ -10,6 +10,7 @@ class Strategy(ABC):
     
     def __init__(self, name):
         self.name = name
+        self.direction = 'LONG'
 
     @abstractmethod
     def check_entry(self, df, i):

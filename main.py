@@ -5,10 +5,11 @@
 import warnings
 warnings.filterwarnings("ignore")
 
-from config.settings import INITIAL_CAPITAL, DATA_FILE, STRATEGY_WEIGHTS
+from config.settings import INITIAL_CAPITAL, DATA_FILE, STRATEGY_WEIGHTS, ENABLE_SHORT
 from data.fetcher import load_data
 from data.features import compute_indicators
-from strategies import BreakoutStrategy, MeanReversionStrategy, MomentumStrategy
+from strategies import (BreakoutStrategy, MeanReversionStrategy, MomentumStrategy,
+                         ShortBreakoutStrategy, ShortMeanReversionStrategy, ShortMomentumStrategy)
 from engine import PortfolioManager
 from analysis import calculate_stats, ResultVisualizer
 from analysis.stats import print_stats
@@ -42,7 +43,22 @@ def main():
         MomentumStrategy("MOMENTUM"),
         weight=STRATEGY_WEIGHTS['MOMENTUM']
     )
-    
+
+    # 숏 전략 등록
+    if ENABLE_SHORT:
+        manager.add_strategy(
+            ShortBreakoutStrategy("SHORT_BREAKOUT"),
+            weight=STRATEGY_WEIGHTS['SHORT_BREAKOUT']
+        )
+        manager.add_strategy(
+            ShortMeanReversionStrategy("SHORT_MEAN_REV"),
+            weight=STRATEGY_WEIGHTS['SHORT_MEAN_REV']
+        )
+        manager.add_strategy(
+            ShortMomentumStrategy("SHORT_MOMENTUM"),
+            weight=STRATEGY_WEIGHTS['SHORT_MOMENTUM']
+        )
+
     # 5. 백테스팅 실행
     trades, eq_curve = manager.run_backtest(df_ind)
     

@@ -20,7 +20,8 @@ class Position:
     """포지션 정보 클래스"""
     
     def __init__(self, strategy_name: str, entry_price: float, quantity: float,
-                 stop_loss: float, entry_time: datetime, entry_index: int):
+                 stop_loss: float, entry_time: datetime, entry_index: int,
+                 direction: str = 'LONG'):
         self.strategy_name = strategy_name
         self.entry_price = entry_price
         self.original_quantity = quantity
@@ -30,6 +31,7 @@ class Position:
         self.entry_index = entry_index
         self.partial_exits: List[Dict] = []
         self.candles_held = 0
+        self.direction = direction
     
     def to_dict(self) -> dict:
         """딕셔너리로 변환 (상태 저장용)"""
@@ -42,7 +44,8 @@ class Position:
             'entry_time': self.entry_time.isoformat() if isinstance(self.entry_time, datetime) else self.entry_time,
             'entry_index': self.entry_index,
             'partial_exits': self.partial_exits,
-            'candles_held': self.candles_held
+            'candles_held': self.candles_held,
+            'direction': self.direction
         }
     
     @classmethod
@@ -63,6 +66,7 @@ class Position:
         pos.remaining_quantity = data['remaining_quantity']
         pos.partial_exits = data.get('partial_exits', [])
         pos.candles_held = data.get('candles_held', 0)
+        pos.direction = data.get('direction', 'LONG')
         return pos
 
 
@@ -113,8 +117,8 @@ class PositionManager:
         return sum(1 for p in self._positions.values() if p is not None)
     
     def open_position(self, strategy_name: str, entry_price: float,
-                      quantity: float, stop_loss: float, 
-                      entry_index: int) -> Optional[Position]:
+                      quantity: float, stop_loss: float,
+                      entry_index: int, direction: str = 'LONG') -> Optional[Position]:
         """
         새 포지션 열기
         
@@ -133,7 +137,10 @@ class PositionManager:
             return None
         
         # 주문 실행
-        order_result = self.order_manager.place_market_buy(quantity)
+        if direction == 'SHORT':
+            order_result = self.order_manager.place_market_sell(quantity, reduce_only=False)
+        else:
+            order_result = self.order_manager.place_market_buy(quantity)
         if not order_result:
             logger.error(f"{strategy_name} 진입 주문 실패")
             return None
@@ -148,12 +155,13 @@ class PositionManager:
             quantity=actual_qty,
             stop_loss=stop_loss,
             entry_time=datetime.now(),
-            entry_index=entry_index
+            entry_index=entry_index,
+            direction=direction
         )
-        
+
         self._positions[strategy_name] = position
-        
-        logger.info(f"포지션 생성: {strategy_name} | 진입: {actual_price:.2f} | 수량: {actual_qty} | SL: {stop_loss:.2f}")
+
+        logger.info(f"포지션 생성: {strategy_name} [{direction}] | 진입: {actual_price:.2f} | 수량: {actual_qty} | SL: {stop_loss:.2f}")
         
         return position
     
@@ -185,21 +193,29 @@ class PositionManager:
             is_partial = False
         
         # 주문 실행
-        order_result = self.order_manager.place_market_sell(close_qty, reduce_only=True)
+        if position.direction == 'SHORT':
+            order_result = self.order_manager.place_market_buy(close_qty)
+        else:
+            order_result = self.order_manager.place_market_sell(close_qty, reduce_only=True)
         if not order_result:
             logger.error(f"{strategy_name} 청산 주문 실패")
             return None
-        
+
         actual_price = float(order_result.get('avgPrice', 0)) or exit_price
         actual_qty = float(order_result.get('executedQty', close_qty))
-        
+
         # 손익 계산
-        pnl = (actual_price - position.entry_price) * actual_qty
-        pnl_pct = (actual_price / position.entry_price - 1) * 100
-        
+        if position.direction == 'SHORT':
+            pnl = (position.entry_price - actual_price) * actual_qty
+            pnl_pct = (1 - actual_price / position.entry_price) * 100
+        else:
+            pnl = (actual_price - position.entry_price) * actual_qty
+            pnl_pct = (actual_price / position.entry_price - 1) * 100
+
         # 거래 기록
         trade_record = {
             'strategy': strategy_name,
+            'direction': position.direction,
             'entry_time': position.entry_time.isoformat(),
             'exit_time': datetime.now().isoformat(),
             'entry_price': position.entry_price,
@@ -284,10 +300,15 @@ class PositionManager:
                 new_sl, force_exit_reason = exit_result
                 partial_close = None
             
-            # 손절가 업데이트
-            if new_sl > position.stop_loss:
-                position.stop_loss = new_sl
-                logger.debug(f"{strategy_name} SL 업데이트: {new_sl:.2f}")
+            # 방향별 SL 업데이트 (LONG: 위로만, SHORT: 아래로만)
+            if position.direction == 'SHORT':
+                if new_sl < position.stop_loss:
+                    position.stop_loss = new_sl
+                    logger.debug(f"{strategy_name} [SHORT] SL 업데이트: {new_sl:.2f}")
+            else:
+                if new_sl > position.stop_loss:
+                    position.stop_loss = new_sl
+                    logger.debug(f"{strategy_name} SL 업데이트: {new_sl:.2f}")
             
             # 부분 청산 처리
             if partial_close is not None and partial_close > 0:
@@ -303,9 +324,19 @@ class PositionManager:
                 if not self.has_position(strategy_name):
                     continue
             
-            # 손절가 체크
-            if current_low <= position.stop_loss:
-                exit_reason = "Trailing_Win" if position.stop_loss > position.entry_price else "SL"
+            # 방향별 SL 체크
+            sl_hit = False
+            if position.direction == 'SHORT':
+                current_high = row['high']
+                if current_high >= position.stop_loss:
+                    sl_hit = True
+                    exit_reason = "Trailing_Win" if position.stop_loss < position.entry_price else "SL"
+            else:
+                if current_low <= position.stop_loss:
+                    sl_hit = True
+                    exit_reason = "Trailing_Win" if position.stop_loss > position.entry_price else "SL"
+
+            if sl_hit:
                 trade = self.close_position(strategy_name, position.stop_loss, exit_reason)
                 if trade:
                     closed_trades.append(trade)
