@@ -3,7 +3,12 @@
     "allow": [
       "Bash(python:*)",
       "Bash(pip install:*)",
-      "Bash(if not exist \"C:\\\\Users\\\\owner\\\\Desktop\\\\서원주\\\\2026-1\\\\military_service_0119\\\\.omc\\\\plans\" mkdir \"C:\\\\Users\\\\owner\\\\Desktop\\\\서원주\\\\2026-1\\\\military_service_0119\\\\.omc\\\\plans\")"
+      "Bash(if not exist \"C:\\\\Users\\\\owner\\\\Desktop\\\\서원주\\\\2026-1\\\\military_service_0119\\\\.omc\\\\plans\" mkdir \"C:\\\\Users\\\\owner\\\\Desktop\\\\서원주\\\\2026-1\\\\military_service_0119\\\\.omc\\\\plans\")",
+      "Bash(dir:*)",
+      "Bash(tree:*)",
+      "Bash(wc:*)",
+      "mcp__plugin_oh-my-claudecode_omc-tools__lsp_diagnostics",
+      "mcp__plugin_oh-my-claudecode_omc-tools__python_repl"
     ]
   }
 }

@@ -14,17 +14,141 @@ from config.settings import (
     BB_PERIOD,
     BB_STD,
     REGIME_ADX_TREND,
-    REGIME_ADX_RANGE
+    REGIME_ADX_RANGE,
+    # Enhanced regime detection
+    REGIME_RSI_BULLISH,
+    REGIME_RSI_BEARISH,
+    REGIME_RSI_OVERBOUGHT,
+    REGIME_RSI_OVERSOLD,
+    REGIME_BB_LOW_PCTL,
+    REGIME_BB_HIGH_PCTL,
+    REGIME_BB_LOOKBACK,
+    REGIME_VOL_HIGH_MULT,
+    REGIME_VOL_LOW_MULT,
+    REGIME_EARLY_TREND_RSI_MIN,
+    REGIME_EARLY_TREND_ADX_MIN,
 )
+
+
+def _classify_regime(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Enhanced market regime classification.
+
+    Returns df with:
+    - regime: Primary regime (TREND_UP, TREND_DOWN, RANGING, WEAK_TREND)
+    - regime_phase: Detailed phase (EARLY_BULL, MATURE_BULL, etc.)
+    - regime_momentum: Momentum state (BULLISH, BEARISH, NEUTRAL)
+    - regime_volatility: Volatility state (HIGH, NORMAL, LOW)
+    - regime_volume: Volume state (HIGH, NORMAL, LOW)
+    - regime_strength: ADX value clipped to 0-100 (preserved)
+
+    Note on ADX thresholds:
+    - ADX < 20 (REGIME_ADX_RANGE): RANGING
+    - ADX >= 18 (REGIME_EARLY_TREND_ADX_MIN): eligible for early trend
+    - ADX overlap zone (18-20): classified by EMA/price/RSI conditions
+    """
+    ema21 = df['ema21']
+    ema50 = df['ema50']
+    ema200 = df['ema200']
+    adx = df['adx']
+    rsi = df['rsi']
+    price = df['close']
+    bb_width = df['bb_width']
+    volume = df['volume']
+    vol_ma = df['vol_ma20']
+
+    # === Primary Regime (backward compatible) ===
+    # Mature trends (original strict definition)
+    mature_bull = (ema21 > ema50) & (ema50 > ema200) & (adx > REGIME_ADX_TREND) & (price > ema50)
+    mature_bear = (ema21 < ema50) & (ema50 < ema200) & (adx > REGIME_ADX_TREND) & (price < ema50)
+
+    # Early trends (new - more permissive)
+    early_bull = (
+        (ema21 > ema50) &
+        (price > ema21) &
+        (adx > REGIME_EARLY_TREND_ADX_MIN) &
+        (rsi > REGIME_EARLY_TREND_RSI_MIN) &
+        ~mature_bull  # Not already mature
+    )
+    early_bear = (
+        (ema21 < ema50) &
+        (price < ema21) &
+        (adx > REGIME_EARLY_TREND_ADX_MIN) &
+        (rsi < (100 - REGIME_EARLY_TREND_RSI_MIN)) &
+        ~mature_bear  # Not already mature
+    )
+
+    ranging = adx < REGIME_ADX_RANGE
+
+    df['regime'] = 'WEAK_TREND'
+    df.loc[mature_bull | early_bull, 'regime'] = 'TREND_UP'
+    df.loc[mature_bear | early_bear, 'regime'] = 'TREND_DOWN'
+    df.loc[ranging, 'regime'] = 'RANGING'
+
+    # Preserve regime_strength (ADX clipped 0-100)
+    df['regime_strength'] = adx.clip(0, 100)
+
+    # === Regime Phase (new detailed classification) ===
+    # Compute BB width percentile (rolling)
+    # Performance note: This uses a rolling lambda which is slower than vectorized ops.
+    bb_pctl = bb_width.rolling(REGIME_BB_LOOKBACK, min_periods=20).apply(
+        lambda x: (x.iloc[-1] <= x).mean() * 100, raw=False
+    )
+
+    df['regime_phase'] = 'NEUTRAL'
+
+    # Bull phases
+    df.loc[early_bull, 'regime_phase'] = 'EARLY_BULL'
+    df.loc[mature_bull, 'regime_phase'] = 'MATURE_BULL'
+    df.loc[mature_bull & (rsi > REGIME_RSI_OVERBOUGHT), 'regime_phase'] = 'LATE_BULL'
+
+    # Bear phases
+    df.loc[early_bear, 'regime_phase'] = 'EARLY_BEAR'
+    df.loc[mature_bear, 'regime_phase'] = 'MATURE_BEAR'
+    df.loc[mature_bear & (rsi < REGIME_RSI_OVERSOLD), 'regime_phase'] = 'LATE_BEAR'
+
+    # Range phases
+    consolidation = ranging & (bb_pctl < REGIME_BB_LOW_PCTL)
+    volatile_range = ranging & (bb_pctl > REGIME_BB_HIGH_PCTL)
+    df.loc[consolidation, 'regime_phase'] = 'CONSOLIDATION'
+    df.loc[volatile_range, 'regime_phase'] = 'VOLATILE_RANGE'
+
+    # === Momentum Classification ===
+    df['regime_momentum'] = 'NEUTRAL'
+    df.loc[rsi > REGIME_RSI_BULLISH, 'regime_momentum'] = 'BULLISH'
+    df.loc[rsi < REGIME_RSI_BEARISH, 'regime_momentum'] = 'BEARISH'
+
+    # === Volatility Classification ===
+    df['regime_volatility'] = 'NORMAL'
+    df.loc[bb_pctl < REGIME_BB_LOW_PCTL, 'regime_volatility'] = 'LOW'
+    df.loc[bb_pctl > REGIME_BB_HIGH_PCTL, 'regime_volatility'] = 'HIGH'
+
+    # === Volume Classification ===
+    # Handle NaN in vol_ma (first 19 rows have NaN from rolling(20))
+    vol_ratio = volume / vol_ma.replace(0, np.nan)
+    df['regime_volume'] = 'NORMAL'
+    df.loc[vol_ratio > REGIME_VOL_HIGH_MULT, 'regime_volume'] = 'HIGH'
+    df.loc[vol_ratio < REGIME_VOL_LOW_MULT, 'regime_volume'] = 'LOW'
+
+    # === NaN Handling (CRITICAL) ===
+    # Fill NaN values with sensible defaults for all new columns
+    df['regime'] = df['regime'].fillna('WEAK_TREND')
+    df['regime_strength'] = df['regime_strength'].fillna(0)
+    df['regime_phase'] = df['regime_phase'].fillna('NEUTRAL')
+    df['regime_momentum'] = df['regime_momentum'].fillna('NEUTRAL')
+    df['regime_volatility'] = df['regime_volatility'].fillna('NORMAL')
+    df['regime_volume'] = df['regime_volume'].fillna('NORMAL')
+
+    return df
 
 
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """
     기술적 지표 계산
-    
+
     Args:
         df: OHLCV 데이터프레임
-    
+
     Returns:
         DataFrame: 지표가 추가된 데이터프레임
     """
@@ -84,23 +208,8 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df['lowerBB'] = df['maBB'] - (df['stdBB'] * BB_STD)
     df['bb_width'] = (df['upperBB'] - df['lowerBB']) / df['maBB']
 
-    # 시장 레짐 분류
-    ema21 = df['ema21']
-    ema50 = df['ema50']
-    ema200 = df['ema200']
-    adx = df['adx']
-    price = df['close']
-
-    trend_up = (ema21 > ema50) & (ema50 > ema200) & (adx > REGIME_ADX_TREND) & (price > ema50)
-    trend_down = (ema21 < ema50) & (ema50 < ema200) & (adx > REGIME_ADX_TREND) & (price < ema50)
-    ranging = adx < REGIME_ADX_RANGE
-    # WEAK_TREND: ADX between RANGE and TREND thresholds
-
-    df['regime'] = 'WEAK_TREND'
-    df.loc[trend_up, 'regime'] = 'TREND_UP'
-    df.loc[trend_down, 'regime'] = 'TREND_DOWN'
-    df.loc[ranging, 'regime'] = 'RANGING'
-    df['regime_strength'] = adx.clip(0, 100)
+    # Enhanced market regime classification
+    df = _classify_regime(df)
 
     return df
 

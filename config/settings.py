@@ -86,6 +86,23 @@ BREAKOUT_RSI_MAX = 80
 # 손절폭 ATR 배수 (축소)
 BREAKOUT_SL_ATR_MULT = 2.0
 
+# Enhanced Regime Detection 활용 (v5.0)
+BREAKOUT_USE_ENHANCED_REGIME = True  # False로 설정 시 v4.0 동작
+BREAKOUT_PHASE_SCORES = {
+    'EARLY_BULL': 2,   # 상승 초기: +2점 보너스
+    'MATURE_BULL': 1,  # 상승 성숙기: +1점 보너스
+    'LATE_BULL': -1,   # 상승 후반: -1점 패널티 (반전 위험)
+}
+BREAKOUT_REQUIRE_BULLISH_MOMENTUM = False  # True면 BEARISH 모멘텀 시 진입 불가
+BREAKOUT_MOMENTUM_BULLISH_BONUS = 1  # BULLISH 모멘텀 보너스 점수
+BREAKOUT_VOL_SL_MULT = {
+    'HIGH': 1.3,    # 고변동성: SL 30% 확대
+    'NORMAL': 1.0,  # 보통: 변경 없음
+    'LOW': 0.8,     # 저변동성: SL 20% 축소
+}
+BREAKOUT_VOLUME_HIGH_BONUS = 1  # HIGH 거래량 보너스 점수
+BREAKOUT_LATE_PHASE_TRAIL_MULT = 0.7  # LATE_BULL 시 트레일링 거리 30% 축소
+
 # =========================================================
 # Mean Reversion Strategy 개선 파라미터
 # =========================================================
@@ -103,6 +120,37 @@ MEAN_REV_PARTIAL_TP = {
 # Mean Reversion 손절 설정
 MEAN_REV_SL_ATR_MULT = 2.0      # 손절 ATR 배수 (기존 하드코딩 3.0에서 축소)
 MEAN_REV_SL_MIN_PCT = 0.004     # 최소 손절 비율 (기존 하드코딩 0.006에서 축소)
+
+# Enhanced Regime Detection 활용 (v4.0)
+MEAN_REV_USE_ENHANCED_REGIME = True  # False로 설정 시 v3.0 동작
+
+# Phase-based scoring (mean reversion prefers ranging phases)
+MEAN_REV_PHASE_SCORES = {
+    'CONSOLIDATION': 2,      # 안정적 횡보: +2점 (최적)
+    'VOLATILE_RANGE': -1,    # 불안정 횡보: -1점 (반전 위험)
+    'LATE_BEAR': 1,          # 하락 후반: +1점 (반등 가능성)
+    'NEUTRAL': 0,            # 기본
+}
+
+# Momentum scoring (BEARISH at oversold = reversal imminent)
+MEAN_REV_MOMENTUM_BEARISH_BONUS = 1  # BEARISH 모멘텀 + 과매도 = +1점 (캐피튤레이션)
+MEAN_REV_REQUIRE_NOT_BULLISH = False  # True면 BULLISH 모멘텀 시 진입 불가
+
+# Volatility-adaptive stop loss
+MEAN_REV_VOL_SL_MULT = {
+    'HIGH': 1.4,    # 고변동성: SL 40% 확대 (휩쏘 방지)
+    'NORMAL': 1.0,  # 보통: 변경 없음
+    'LOW': 0.7,     # 저변동성: SL 30% 축소 (타이트한 관리)
+}
+
+# Volume-based entry quality (capitulation detection)
+MEAN_REV_VOLUME_HIGH_BONUS = 1  # HIGH 거래량 + 과매도 = 캐피튤레이션 신호
+
+# Minimum score for entry (enhanced mode only)
+MEAN_REV_MIN_SCORE = 1  # 최소 점수 기준
+
+# Phase-based exit tightening
+MEAN_REV_VOLATILE_PHASE_PROTECT_ATR = 1.0  # VOLATILE_RANGE에서 보호 청산 ATR (기본 1.5 → 1.0)
 
 # =========================================================
 # Momentum Strategy 파라미터
@@ -204,6 +252,25 @@ RANDOM_SEED = 42             # 재현성을 위한 랜덤 시드
 # =========================================================
 REGIME_ADX_TREND = 25       # ADX 이 값 이상 = 추세 시장
 REGIME_ADX_RANGE = 20       # ADX 이 값 이하 = 횡보 시장
+
+# Enhanced regime momentum thresholds
+REGIME_RSI_BULLISH = 55      # Above = bullish momentum
+REGIME_RSI_BEARISH = 45      # Below = bearish momentum
+REGIME_RSI_OVERBOUGHT = 70   # Overbought for late phase
+REGIME_RSI_OVERSOLD = 30     # Oversold for late phase
+
+# Volatility classification (BB width percentile)
+REGIME_BB_LOW_PCTL = 20      # Below = low volatility
+REGIME_BB_HIGH_PCTL = 80     # Above = high volatility
+REGIME_BB_LOOKBACK = 100     # Lookback for percentile calc
+
+# Volume classification
+REGIME_VOL_HIGH_MULT = 1.5   # Above = high volume
+REGIME_VOL_LOW_MULT = 0.7    # Below = low volume
+
+# Early trend detection (less strict than full alignment)
+REGIME_EARLY_TREND_RSI_MIN = 50   # RSI must be at least this for EARLY_BULL
+REGIME_EARLY_TREND_ADX_MIN = 18   # ADX must be at least this for early trend
 
 WALK_FORWARD_CONFIG = {
     'in_sample_ratio': 0.7,      # In-sample 비율 (70%) - 전략 검증용

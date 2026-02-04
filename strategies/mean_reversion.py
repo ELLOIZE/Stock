@@ -6,13 +6,29 @@ from strategies.base import Strategy
 from config.settings import (
     MEAN_REV_REQUIRE_BULLISH_CONFIRM,
     MEAN_REV_SL_ATR_MULT,
-    MEAN_REV_SL_MIN_PCT
+    MEAN_REV_SL_MIN_PCT,
+    # Enhanced Regime Detection (v4.0)
+    MEAN_REV_USE_ENHANCED_REGIME,
+    MEAN_REV_PHASE_SCORES,
+    MEAN_REV_MOMENTUM_BEARISH_BONUS,
+    MEAN_REV_REQUIRE_NOT_BULLISH,
+    MEAN_REV_VOL_SL_MULT,
+    MEAN_REV_VOLUME_HIGH_BONUS,
+    MEAN_REV_MIN_SCORE,
+    MEAN_REV_VOLATILE_PHASE_PROTECT_ATR,
 )
 
 
 class MeanReversionStrategy(Strategy):
     """
-    역추세 전략 v3.0 - 레짐 필터 + 양봉 확인
+    역추세 전략 v4.0 - Enhanced Regime Detection
+
+    v4.0 Changes:
+    - Phase-based scoring (CONSOLIDATION preferred)
+    - Momentum scoring (BEARISH at oversold = capitulation)
+    - Volume scoring (HIGH volume at oversold)
+    - Volatility-adaptive stop loss
+    - Phase-based exit tightening
 
     진입 조건:
     - 레짐: RANGING 또는 WEAK_TREND만
@@ -34,6 +50,35 @@ class MeanReversionStrategy(Strategy):
         super().__init__(name)
         self._partial_taken = {}
 
+    def _calculate_entry_score(self, row):
+        """
+        Enhanced regime scoring for entry quality (v4.0)
+        Following BreakoutStrategy pattern: calculate and return score immediately.
+
+        Returns:
+            tuple: (should_block_entry, score)
+        """
+        score = 0
+
+        # Phase-based scoring
+        phase = row.get('regime_phase', 'NEUTRAL')
+        phase_score = MEAN_REV_PHASE_SCORES.get(phase, 0)
+        score += phase_score
+
+        # Momentum scoring (BEARISH at oversold = capitulation)
+        momentum = row.get('regime_momentum', 'NEUTRAL')
+        if MEAN_REV_REQUIRE_NOT_BULLISH and momentum == 'BULLISH':
+            return True, 0  # Block: already bouncing
+        if momentum == 'BEARISH':
+            score += MEAN_REV_MOMENTUM_BEARISH_BONUS
+
+        # Volume scoring (HIGH volume at oversold = capitulation)
+        regime_volume = row.get('regime_volume', 'NORMAL')
+        if regime_volume == 'HIGH':
+            score += MEAN_REV_VOLUME_HIGH_BONUS
+
+        return False, score
+
     def check_entry(self, df, i):
         if i < 200:
             return False
@@ -44,6 +89,14 @@ class MeanReversionStrategy(Strategy):
         regime = row.get('regime', '')
         if regime not in ('RANGING', 'WEAK_TREND'):
             return False
+
+        # ========== Enhanced Regime Scoring (v4.0) ==========
+        if MEAN_REV_USE_ENHANCED_REGIME:
+            should_block, score = self._calculate_entry_score(row)
+            if should_block:
+                return False
+            if score < MEAN_REV_MIN_SCORE:
+                return False
 
         # 1. 밴드 하단 이탈 (과매도)
         if row['close'] > row['lowerBB']:
@@ -92,13 +145,30 @@ class MeanReversionStrategy(Strategy):
             # 손익분기점으로 SL 이동
             if entry_price > entry_sl:
                 entry_sl = entry_price
-            # 진입가 대비 1.5 ATR 하락 시 즉시 청산
-            if atr > 0 and row['close'] < entry_price - 1.5 * atr:
+
+            # Phase-aware protection (v4.0): tighter in VOLATILE_RANGE
+            protect_atr = 1.5  # Default v3.0 value
+            if MEAN_REV_USE_ENHANCED_REGIME:
+                phase = row.get('regime_phase', 'NEUTRAL')
+                if phase == 'VOLATILE_RANGE':
+                    protect_atr = MEAN_REV_VOLATILE_PHASE_PROTECT_ATR
+
+            # 진입가 대비 protect_atr ATR 하락 시 즉시 청산
+            if atr > 0 and row['close'] < entry_price - protect_atr * atr:
                 self._partial_taken.pop(trade_id, None)
                 return entry_sl, "EXIT_MR_RETRACE", None
 
         return entry_sl, None, None
 
     def get_stop_loss_dist(self, row):
+        """손절폭 계산 (v4.0: 변동성 적응형)"""
         atr = row.get('atr', 0)
-        return max(atr * MEAN_REV_SL_ATR_MULT, row['close'] * MEAN_REV_SL_MIN_PCT)
+        base_sl = atr * MEAN_REV_SL_ATR_MULT
+
+        # Volatility adaptation (v4.0)
+        if MEAN_REV_USE_ENHANCED_REGIME:
+            volatility = row.get('regime_volatility', 'NORMAL')
+            vol_mult = MEAN_REV_VOL_SL_MULT.get(volatility, 1.0)
+            base_sl *= vol_mult
+
+        return max(base_sl, row['close'] * MEAN_REV_SL_MIN_PCT)

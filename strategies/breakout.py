@@ -11,7 +11,15 @@ from config.settings import (
     BREAKOUT_SL_ATR_MULT,
     BREAKOUT_RES_MARGIN_PCT,
     BREAKOUT_RSI_MIN,
-    BREAKOUT_RSI_MAX
+    BREAKOUT_RSI_MAX,
+    # Enhanced Regime Detection (v5.0)
+    BREAKOUT_USE_ENHANCED_REGIME,
+    BREAKOUT_PHASE_SCORES,
+    BREAKOUT_REQUIRE_BULLISH_MOMENTUM,
+    BREAKOUT_MOMENTUM_BULLISH_BONUS,
+    BREAKOUT_VOL_SL_MULT,
+    BREAKOUT_VOLUME_HIGH_BONUS,
+    BREAKOUT_LATE_PHASE_TRAIL_MULT,
 )
 
 
@@ -140,6 +148,25 @@ class BreakoutStrategy(Strategy):
         if ema21 > ema50 > ema200:
             score += 1
 
+        # ========== Enhanced Regime Scoring (v5.0) ==========
+        if BREAKOUT_USE_ENHANCED_REGIME:
+            # Phase-based scoring
+            phase = row.get('regime_phase', 'NEUTRAL')
+            phase_score = BREAKOUT_PHASE_SCORES.get(phase, 0)
+            score += phase_score
+
+            # Momentum confirmation
+            momentum = row.get('regime_momentum', 'NEUTRAL')
+            if BREAKOUT_REQUIRE_BULLISH_MOMENTUM and momentum == 'BEARISH':
+                return False, 0  # Block entry on bearish momentum
+            if momentum == 'BULLISH':
+                score += BREAKOUT_MOMENTUM_BULLISH_BONUS
+
+            # Volume bonus (regime-based)
+            regime_volume = row.get('regime_volume', 'NORMAL')
+            if regime_volume == 'HIGH':
+                score += BREAKOUT_VOLUME_HIGH_BONUS
+
         return True, score
 
     def check_entry(self, df, i):
@@ -187,18 +214,25 @@ class BreakoutStrategy(Strategy):
         # 4단계 트레일링 스탑
         levels = TRAILING_STOP_LEVELS
 
+        # Late-phase acceleration (v5.0): LATE_BULL일 때 트레일링 거리 축소
+        trail_mult = 1.0
+        if BREAKOUT_USE_ENHANCED_REGIME:
+            phase = row.get('regime_phase', 'NEUTRAL')
+            if phase == 'LATE_BULL':
+                trail_mult = BREAKOUT_LATE_PHASE_TRAIL_MULT
+
         if row['high'] > entry_price + (levels['stage3']['profit_atr'] * atr):
-            trail_sl = row['high'] - (levels['stage3']['trail_atr'] * atr)
+            trail_sl = row['high'] - (levels['stage3']['trail_atr'] * atr * trail_mult)
             if trail_sl > new_sl:
                 new_sl = trail_sl
 
         elif row['high'] > entry_price + (levels['stage2']['profit_atr'] * atr):
-            trail_sl = row['high'] - (levels['stage2']['trail_atr'] * atr)
+            trail_sl = row['high'] - (levels['stage2']['trail_atr'] * atr * trail_mult)
             if trail_sl > new_sl:
                 new_sl = trail_sl
 
         elif row['high'] > entry_price + (levels['stage1']['profit_atr'] * atr):
-            trail_sl = row['high'] - (levels['stage1']['trail_atr'] * atr)
+            trail_sl = row['high'] - (levels['stage1']['trail_atr'] * atr * trail_mult)
             if trail_sl > new_sl:
                 new_sl = trail_sl
 
@@ -209,6 +243,14 @@ class BreakoutStrategy(Strategy):
         return new_sl, None, partial_close
 
     def get_stop_loss_dist(self, row):
-        """손절폭 계산"""
+        """손절폭 계산 (v5.0: 변동성 적응형)"""
         atr = row.get('atr', 0)
-        return max(atr * BREAKOUT_SL_ATR_MULT, row['close'] * 0.004)
+        base_sl = atr * BREAKOUT_SL_ATR_MULT
+
+        # Volatility adaptation (v5.0)
+        if BREAKOUT_USE_ENHANCED_REGIME:
+            volatility = row.get('regime_volatility', 'NORMAL')
+            vol_mult = BREAKOUT_VOL_SL_MULT.get(volatility, 1.0)
+            base_sl *= vol_mult
+
+        return max(base_sl, row['close'] * 0.004)
