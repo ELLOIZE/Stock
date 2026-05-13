@@ -1,6 +1,7 @@
 {
   "repository": "ELLOIZE/Stock",
   "publicBaseUrl": "https://elloize.github.io/Stock",
+  "publishBranch": "gh-pages",
   "dailyReportPathPattern": "reports/YYYY-MM-DD.html",
   "weeklyReportPathPattern": "weekly/YYYY-MM-DD.html"
 }
