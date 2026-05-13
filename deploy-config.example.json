@@ -1,0 +1,6 @@
+{
+  "repository": "YOUR_GITHUB_USERNAME/us-market-reports",
+  "publicBaseUrl": "https://YOUR_GITHUB_USERNAME.github.io/us-market-reports",
+  "dailyReportPathPattern": "reports/YYYY-MM-DD.html",
+  "weeklyReportPathPattern": "weekly/YYYY-MM-DD.html"
+}
