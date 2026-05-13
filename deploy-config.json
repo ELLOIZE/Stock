@@ -1,0 +1,6 @@
+{
+  "repository": "ELLOIZE/Stock",
+  "publicBaseUrl": "https://elloize.github.io/Stock",
+  "dailyReportPathPattern": "reports/YYYY-MM-DD.html",
+  "weeklyReportPathPattern": "weekly/YYYY-MM-DD.html"
+}
