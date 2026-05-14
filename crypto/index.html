@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>미국 주식 리포트</title>
+  <title>코인 리포트</title>
   <style>
     body {
       margin: 0;
@@ -89,6 +89,10 @@
       text-decoration: none;
       font-weight: 700;
     }
+    .empty {
+      color: #64748b;
+      text-align: center;
+    }
     .muted {
       color: #64748b;
       font-size: 13px;
@@ -106,17 +110,17 @@
 <body>
   <main>
     <section class="hero">
-      <h1>미국 주식 리포트</h1>
-      <p>매일 미국장 마감 리포트와 매주 추천 종목 점검 리포트를 모아두는 정적 대시보드입니다.</p>
+      <h1>코인 리포트</h1>
+      <p>비트코인, 이더리움, 주요 알트코인 흐름을 별도로 모아두는 대시보드입니다.</p>
     </section>
 
     <nav class="tabs" aria-label="리포트 분류">
-      <a class="tab active" href="./">주식</a>
-      <a class="tab" href="./crypto/">코인</a>
+      <a class="tab" href="../">주식</a>
+      <a class="tab active" href="./">코인</a>
     </nav>
 
     <section class="card">
-      <h2>최근 주식 리포트</h2>
+      <h2>최근 코인 리포트</h2>
       <table>
         <thead>
           <tr>
@@ -127,18 +131,11 @@
         </thead>
         <tbody>
           <tr>
-            <td>2026-05-13</td>
-            <td>미국장 시황</td>
-            <td><a href="./reports/2026-05-13.html">리포트 열기</a></td>
-          </tr>
-          <tr>
-            <td>2026-05-12</td>
-            <td>미국장 시황</td>
-            <td><a href="./reports/2026-05-12.html">리포트 열기</a></td>
+            <td colspan="3" class="empty">아직 등록된 코인 리포트가 없습니다.</td>
           </tr>
         </tbody>
       </table>
-      <p class="muted">자동화가 실행되면 새 주식 리포트가 이 목록의 맨 위에 추가됩니다.</p>
+      <p class="muted">코인 리포트를 만들면 이 목록에 최신 항목부터 추가됩니다.</p>
     </section>
   </main>
 </body>
