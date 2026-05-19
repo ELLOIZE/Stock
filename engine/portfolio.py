@@ -92,7 +92,7 @@ class PortfolioManager:
         return sum(1 for t in self.active_trades.values()
                    if t is not None and t.get('direction', 'LONG') == direction)
 
-    def _calculate_position_size(self, atr, price, sl_dist, direction='LONG'):
+    def _calculate_position_size(self, atr, price, sl_dist, direction='LONG', weight=1.0):
         """
         동적 포지션 사이징
 
@@ -109,7 +109,7 @@ class PortfolioManager:
         if not allow_entry:
             return 0, False  # 진입 불가
 
-        adjusted_risk = base_risk * dd_mult
+        adjusted_risk = base_risk * dd_mult * max(float(weight), 0.0)
 
         # 동시 포지션 시 리스크 축소
         active_count = self._get_concurrent_position_count(direction)
@@ -149,7 +149,8 @@ class PortfolioManager:
         # DD 6% 초과 시 당일 거래 중단
         if self.daily_high_watermark > 0:
             current_dd = (self.daily_high_watermark - self.current_capital) / self.daily_high_watermark
-            if current_dd > DRAWDOWN_RISK_TIERS['halt']['max_dd']:
+            halt_threshold = DRAWDOWN_RISK_TIERS['warning']['max_dd']
+            if current_dd >= halt_threshold:
                 self.daily_dd_halt = True
 
     def _handle_partial_exit(self, strat_name, trade, row, timestamp, exit_price, exit_reason, close_pct):
@@ -165,13 +166,17 @@ class PortfolioManager:
             pnl = (trade['entry_price'] - actual_exit_price) * close_size
         else:
             pnl = (actual_exit_price - trade['entry_price']) * close_size
-        fee = (trade['entry_price'] + exit_price) * close_size * self.fee_rate
+        fee = (trade['entry_price'] + actual_exit_price) * close_size * self.fee_rate
         net_pnl = pnl - fee
 
         self.current_capital += net_pnl
 
         # 잔여 수량 업데이트
         trade['remaining_size'] -= close_size
+
+        reason = exit_reason or "PARTIAL_TP"
+        if not reason.startswith("PARTIAL_"):
+            reason = f"PARTIAL_{reason}"
 
         # 부분 청산 기록
         self.trade_history.append({
@@ -181,7 +186,7 @@ class PortfolioManager:
             'exit_price': actual_exit_price,
             'size': close_size,
             'net_pnl': net_pnl,
-            'exit_reason': f"PARTIAL_{exit_reason}",
+            'exit_reason': reason,
             'type': strat_name,
             'is_partial': True,
             'direction': direction
@@ -206,7 +211,7 @@ class PortfolioManager:
             pnl = (trade['entry_price'] - actual_exit_price) * remaining_size
         else:
             pnl = (actual_exit_price - trade['entry_price']) * remaining_size
-        fee = (trade['entry_price'] + exit_price) * remaining_size * self.fee_rate
+        fee = (trade['entry_price'] + actual_exit_price) * remaining_size * self.fee_rate
         net_pnl = pnl - fee
 
         self.current_capital += net_pnl
@@ -325,7 +330,9 @@ class PortfolioManager:
                 sl_dist = algo.get_stop_loss_dist(row)
 
                 # 동적 포지션 사이징
-                size, allow_entry = self._calculate_position_size(atr, row['close'], sl_dist, algo.direction)
+                size, allow_entry = self._calculate_position_size(
+                    atr, row['close'], sl_dist, algo.direction, weight
+                )
 
                 if not allow_entry or size <= 0:
                     continue  # 진입 불가
@@ -347,7 +354,8 @@ class PortfolioManager:
                     'remaining_size': size,
                     'entry_time': timestamp,
                     'entry_index': i,
-                    'direction': algo.direction
+                    'direction': algo.direction,
+                    'weight': weight
                 }
 
                 # 전략의 부분 익절 상태 초기화
@@ -393,6 +401,18 @@ class PortfolioManager:
 
             # B. 신규 진입 체크
             self._check_entries(df, i, row, timestamp, atr)
+
+        if len(df) > 0:
+            final_row = df.iloc[-1]
+            final_timestamp = final_row['timestamp']
+            for strat_name, trade in list(self.active_trades.items()):
+                if trade is not None:
+                    self._handle_exit(
+                        strat_name, trade, final_row, final_timestamp,
+                        final_row['close'], "BACKTEST_END"
+                    )
+            if self.equity_curve:
+                self.equity_curve[-1]['equity'] = self.current_capital
 
         return pd.DataFrame(self.trade_history), pd.DataFrame(self.equity_curve)
 

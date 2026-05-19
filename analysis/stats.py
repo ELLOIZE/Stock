@@ -105,6 +105,39 @@ def calculate_sortino_ratio(returns, risk_free_rate=0.0, periods_per_year=105120
     return sortino
 
 
+def _position_level_trades(trades_df):
+    """Collapse partial exits and final exits into one row per opened position."""
+    required_cols = {'entry_time', 'type', 'direction', 'net_pnl'}
+    if not required_cols.issubset(trades_df.columns):
+        return trades_df
+
+    position_rows = []
+    group_cols = ['entry_time', 'type', 'direction']
+    for _, group in trades_df.groupby(group_cols, sort=False):
+        row = group.iloc[-1].copy()
+        row['net_pnl'] = group['net_pnl'].astype(float).sum()
+        if 'size' in group.columns:
+            row['size'] = group['size'].astype(float).sum()
+        if 'is_partial' in group.columns:
+            row['is_partial'] = False
+        position_rows.append(row)
+
+    return trades_df.__class__(position_rows).reset_index(drop=True)
+
+
+def _average_pnl_pct(trades_df):
+    if trades_df.empty or 'entry_price' not in trades_df.columns or 'size' not in trades_df.columns:
+        return 0.0
+
+    entry_notional = trades_df['entry_price'].astype(float) * trades_df['size'].astype(float)
+    valid = entry_notional != 0
+    if not valid.any():
+        return 0.0
+
+    pnl_pct = trades_df.loc[valid, 'net_pnl'].astype(float) / entry_notional[valid]
+    return pnl_pct.mean() * 100
+
+
 def calculate_stats(trades_df, initial, final, equity_curve=None):
     """
     백테스트 결과 통계 계산
@@ -130,10 +163,11 @@ def calculate_stats(trades_df, initial, final, equity_curve=None):
             "avg_loss_pct": 0.0
         }
     
-    wins = trades_df[trades_df['net_pnl'] > 0]
-    losses = trades_df[trades_df['net_pnl'] <= 0]
+    position_trades = _position_level_trades(trades_df)
+    wins = position_trades[position_trades['net_pnl'] > 0]
+    losses = position_trades[position_trades['net_pnl'] <= 0]
     
-    win_rate = len(wins) / len(trades_df) * 100
+    win_rate = len(wins) / len(position_trades) * 100
     profit_factor = wins['net_pnl'].sum() / -losses['net_pnl'].sum() if not losses.empty and losses['net_pnl'].sum() != 0 else 0
     
     # Win/Loss 평균 손익 계산 (수수료 포함)
@@ -141,8 +175,12 @@ def calculate_stats(trades_df, initial, final, equity_curve=None):
     avg_loss = losses['net_pnl'].mean() if not losses.empty else 0.0
     
     # Win/Loss 평균 수익률/손실률 계산 (%)
-    avg_win_pct = (wins['net_pnl'] / wins['entry_price']).mean() * 100 if not wins.empty else 0.0
-    avg_loss_pct = (losses['net_pnl'] / losses['entry_price']).mean() * 100 if not losses.empty else 0.0
+    avg_win_pct = _average_pnl_pct(wins)
+    avg_loss_pct = _average_pnl_pct(losses)
+
+    partial_exits = 0
+    if 'is_partial' in trades_df.columns:
+        partial_exits = (trades_df['is_partial'].astype(str).str.lower() == 'true').sum()
 
     # 리스크 지표 계산
     if equity_curve is not None and len(equity_curve) > 1:
@@ -160,7 +198,9 @@ def calculate_stats(trades_df, initial, final, equity_curve=None):
     return {
         "final_equity": final,
         "total_return": (final / initial - 1) * 100,
-        "num_trades": len(trades_df),
+        "num_trades": len(position_trades),
+        "exit_rows": len(trades_df),
+        "partial_exits": int(partial_exits),
         "win_rate": win_rate,
         "pf": profit_factor,
         "avg_win": avg_win,
@@ -170,7 +210,7 @@ def calculate_stats(trades_df, initial, final, equity_curve=None):
         "max_drawdown_pct": dd_stats['max_drawdown_pct'],
         "sharpe_ratio": sharpe,
         "sortino_ratio": sortino,
-        "by_type": trades_df.groupby('type')['net_pnl'].agg(['count', 'sum', 'mean'])
+        "by_type": position_trades.groupby('type')['net_pnl'].agg(['count', 'sum', 'mean'])
     }
 
 
